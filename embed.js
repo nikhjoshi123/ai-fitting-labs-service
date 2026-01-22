@@ -1,6 +1,25 @@
 (function() {
     const MY_KEY = "fa-psJSioorPgb9-5cT5HZYyoCGokJVywFgFOPWt";
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwjKnxSlvXYb3md65VMNQRKE26hlgwX8Uuq7_145NzgMOaFDiHTCuPIpXni1N6znt8B/exec"; 
+    // YOUR NEW GOOGLE SCRIPT URL
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwFONKsCMEb6rAYt_xewl52PHWUHsUiCds9pxAGs2noWhCUQCgmzsJ6-e-7zYshwOvV/exec"; 
+
+    // --- SPINNER UI ---
+    function toggleLoading(show) {
+        let loader = document.getElementById("vton-loader");
+        if (show) {
+            if (!loader) {
+                loader = document.createElement("div");
+                loader.id = "vton-loader";
+                loader.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:100001;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:sans-serif;";
+                loader.innerHTML = `
+                    <div style="border: 6px solid #f3f3f3; border-top: 6px solid #ffcc00; border-radius: 50%; width: 50px; height: 50px; animation: vton-spin 1s linear infinite;"></div>
+                    <p style="margin-top:20px; font-weight:bold; font-size:18px;">AI is styling your outfit... Please wait.</p>
+                    <style>@keyframes vton-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+                `;
+                document.body.appendChild(loader);
+            }
+        } else if (loader) { loader.remove(); }
+    }
 
     async function monitorSubscription() {
         if (!window.location.href.includes("/product/")) {
@@ -11,17 +30,27 @@
 
         try {
             const check = await fetch(SCRIPT_URL + "?url=" + encodeURIComponent(window.location.hostname));
-            const status = await check.json();
+            const data = await check.json();
             const existingBtn = document.getElementById("ai-vton-btn");
 
-            if (!existingBtn) {
-                createButton(status.canUse);
-            } else {
-                updateButtonStatus(existingBtn, status.canUse);
+            // 1. REMOVE: Vanish if status is 'REMOVE'
+            if (data.status === "REMOVE") {
+                if (existingBtn) existingBtn.remove();
+                return;
             }
-        } catch (e) {
-            console.warn("Syncing...");
-        }
+
+            // 2. EXPIRED: Show locked button
+            if (!data.canUse) {
+                if (!existingBtn) createButton(false);
+                else updateButtonStatus(existingBtn, false);
+                return;
+            }
+
+            // 3. ACTIVE: Show working button
+            if (!existingBtn) createButton(true);
+            else updateButtonStatus(existingBtn, true);
+
+        } catch (e) { console.warn("Syncing..."); }
     }
 
     function updateButtonStatus(btn, canUse) {
@@ -40,7 +69,6 @@
         const btn = document.createElement("button");
         btn.id = "ai-vton-btn";
         btn.style.cssText = "position:fixed;bottom:30px;right:30px;z-index:9999;padding:18px 30px;color:#fff;border-radius:50px;font-weight:bold;border:none;box-shadow:0 10px 30px rgba(0,0,0,0.5);transition: all 0.3s ease;";
-        
         updateButtonStatus(btn, canUse);
 
         const fileInput = document.createElement("input");
@@ -51,10 +79,8 @@
 
         btn.onclick = () => {
             if (btn.innerHTML.includes("🔒")) {
-                // Professional message with your contact info
-                alert("Trial Period Expired. To continue using AI Try-On, please contact nikhjoshi1234@gmail.com to activate your plan.");
+                alert("Subscription Expired. Contact nikhjoshi1234@gmail.com to renew.");
             } else {
-                // POPUP REMOVED: Now opens file input directly
                 fileInput.click();
             }
         };
@@ -65,8 +91,8 @@
             let prodImg = Array.from(images).find(img => img.width > 300 && !img.src.includes("logo"))?.src;
 
             if (!file || !prodImg) return;
-            btn.innerHTML = "⏳ AI Fitting...";
-            
+            toggleLoading(true); // SHOW SPINNER
+
             const reader = new FileReader();
             reader.onloadend = async () => {
                 try {
@@ -78,14 +104,13 @@
                             inputs: { model_image: reader.result, garment_image: prodImg, category: "auto" }
                         })
                     });
-                    const data = await res.json();
-                    if (data.id) {
+                    const resData = await res.json();
+                    if (resData.id) {
+                        // Notify Google Sheet
                         fetch(SCRIPT_URL + "?action=use&url=" + encodeURIComponent(window.location.hostname), {mode: 'no-cors'});
-                        startPolling(data.id);
-                    }
-                } catch (err) {
-                    btn.innerHTML = "✨ AI Try On";
-                }
+                        startPolling(resData.id);
+                    } else { toggleLoading(false); }
+                } catch (err) { toggleLoading(false); }
             };
             reader.readAsDataURL(file);
         };
@@ -98,14 +123,17 @@
         });
         const result = await res.json();
         if (result.status === "completed") {
+            toggleLoading(false); // HIDE SPINNER
             showFullPopup(result.output[0]);
-            document.getElementById("ai-vton-btn").innerHTML = "✨ AI Try On";
+        } else if (result.status === "failed") {
+            toggleLoading(false);
+            alert("AI processing failed. Please try a different photo.");
         } else { setTimeout(() => startPolling(id), 3000); }
     }
 
     function showFullPopup(imgUrl) {
         const overlay = document.createElement("div");
-        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:100000;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;padding:20px;font-family:sans-serif;";
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:100000;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;padding:20px;";
         overlay.innerHTML = `
             <h2 style="margin-bottom:20px;">AI Fitting Result</h2>
             <img src="${imgUrl}" style="max-height:75%; border-radius:15px; border:2px solid #fff;">
