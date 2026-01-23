@@ -7,6 +7,7 @@ API_KEY = os.environ.get("FASHN_API_KEY")
 
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
+        # This is the "Handshake" that stops the browser from blocking you
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -19,8 +20,7 @@ class handler(BaseHTTPRequestHandler):
         
         try:
             data = json.loads(body)
-            
-            # THE HANDSHAKE WITH FASHN AI
+            # Talking to the AI Engine
             response = requests.post(
                 "https://api.fashn.ai/v1/run",
                 headers={
@@ -34,8 +34,7 @@ class handler(BaseHTTPRequestHandler):
                 timeout=60
             )
             
-            # Send the AI's actual answer back to the browser
-            self.send_response(response.status_code)
+            self.send_response(200)
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-type', 'application/json')
             self.end_headers()
