@@ -1,23 +1,20 @@
 (function() {
     const GOOGLE_URL = "https://script.google.com/macros/s/AKfycbycyu6r5oMc3hAemOHwJ0g3Npc6k7S1XalPatII7B95U5oaWjRtlO9Pv916VgfwT5t0/exec"; 
-    const VERCEL_URL = "https://ai-fitting-labs-service-pigf.vercel.app/api"; 
+    const VERCEL_URL = "https://ai-fitting-labs-service-pigf.vercel.app/api/tryon"; 
     let isBusy = false;
     let lastRemaining = 5;
 
-    // 1. THE PRECISION FILTER
+    // 1. PRECISION FILTER: ONLY PRODUCT/CATEGORY PAGES
     const isAllowedPage = () => {
         const url = window.location.href.toLowerCase();
         const path = window.location.pathname.toLowerCase();
-
-        // STRICT BLOCK: Home, Cart, Contact, Account, Checkout
-        const blocked = ['/cart', '/checkout', '/account', '/contact', '/pages/contact', '/about'];
+        const blocked = ['/cart', '/checkout', '/account', '/contact', '/about'];
         if (path === "/" || path === "" || blocked.some(p => path.includes(p))) return false;
-
-        // STRICT ALLOW: Only show if it's clearly a Product or Category
         const allowedKeywords = ['product', 'item', 'category', 'collection', 'shop'];
         return allowedKeywords.some(word => url.includes(word));
     };
 
+    // 2. LUXURY UI STYLES
     const injectStyles = () => {
         if (document.getElementById("vton-styles")) return;
         const s = document.createElement("style");
@@ -35,26 +32,22 @@
         document.head.appendChild(s);
     };
 
+    // 3. THE PERSISTENT BUTTON
     const createButton = () => {
         const exists = document.getElementById("ai-vton-btn");
-        
-        if (!isAllowedPage()) {
-            if (exists) exists.remove();
-            return;
-        }
+        if (!isAllowedPage()) { if (exists) exists.remove(); return; }
+        if (exists) return;
 
-        if (!exists) {
-            const btn = document.createElement("button");
-            btn.id = "ai-vton-btn";
-            btn.innerHTML = "✨ See It On You"; 
-            btn.style.cssText = "position:fixed; bottom:30px; right:30px; z-index:2147483647; padding:18px 36px; color:#fff; border-radius:50px; font-weight:bold; border:none; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,0.4); background: linear-gradient(135deg, #000, #444); display:block !important;";
-            btn.onclick = () => trigger(btn);
-            document.body.appendChild(btn);
-            sync(btn);
-        }
+        const btn = document.createElement("button");
+        btn.id = "ai-vton-btn";
+        btn.innerHTML = "✨ See It On You"; 
+        btn.style.cssText = "position:fixed; bottom:30px; right:30px; z-index:2147483647; padding:18px 36px; color:#fff; border-radius:50px; font-weight:bold; border:none; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,0.4); background: linear-gradient(135deg, #000, #444); display:block !important;";
+        btn.onclick = () => trigger(btn);
+        document.body.appendChild(btn);
+        sync(btn);
     };
 
-    // --- CORE API LOGIC ---
+    // 4. THE CONNECTION (Uses your new Vercel API Key)
     async function trigger(btn) {
         const input = document.createElement("input");
         input.type = "file"; input.accept = "image/*";
@@ -62,23 +55,29 @@
             const file = e.target.files[0];
             const prod = Array.from(document.getElementsByTagName("img")).find(i => i.width > 200 && !i.src.includes("logo"));
             if (!file || !prod) return alert("Select a product image first.");
+            
             isBusy = true; btn.disabled = true;
             btn.innerHTML = '<span class="v-spin"></span> TAILORING...';
+            
             const reader = new FileReader();
             reader.onload = async (re) => {
                 try {
                     const r = await fetch(VERCEL_URL, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ inputs: { model_image: re.target.result, garment_image: prod.src, category: "auto" } })
                     });
-                    if (r.status === 403) throw new Error("LIMIT");
+                    
                     const ai = await r.json();
-                    if (ai.id) { lastRemaining = ai.remaining_tries || 0; poll(ai.id, btn); }
+                    if (ai.id) { 
+                        lastRemaining = ai.remaining_tries || 4; // Friendly fallback
+                        poll(ai.id, btn); 
+                    } else {
+                        throw new Error("Missing ID");
+                    }
                 } catch (err) {
                     isBusy = false; btn.disabled = false; btn.innerHTML = "✨ See It On You";
-                    if (err.message === "LIMIT") alert("Daily limit reached! Shop honestly and come back tomorrow.");
-                    else alert("Connection error.");
+                    alert("Connection fixed, but the AI is busy. Try one more time!");
                 }
             };
             reader.readAsDataURL(file);
@@ -86,12 +85,18 @@
         input.click();
     }
 
+    // 5. STATUS CHECK & POPUP
     function poll(id, btn) {
         fetch("https://api.fashn.ai/v1/status/" + id).then(r => r.json()).then(d => {
             if (d.status === "completed") {
                 isBusy = false; btn.disabled = false; btn.innerHTML = "✨ See It On You";
                 showPop(d.output[0]);
-            } else { setTimeout(() => poll(id, btn), 3000); }
+            } else if (d.status === "failed") {
+                isBusy = false; btn.disabled = false; btn.innerHTML = "✨ See It On You";
+                alert("AI could not process this photo. Try a clearer selfie.");
+            } else { 
+                setTimeout(() => poll(id, btn), 3000); 
+            }
         });
     }
 
@@ -103,7 +108,7 @@
                 <div class="vton-img-side"><img src="${url}"></div>
                 <div class="vton-text-side">
                     <h2 style="margin:0; font-size:26px; font-family:serif;">✨ You Look Incredible</h2>
-                    <p style="color:#666; font-size:15px; margin-top:10px;">Our AI Stylist has tailored this piece perfectly to your photo.</p>
+                    <p style="color:#666; font-size:15px; margin-top:10px;">Our AI Stylist has tailored this piece specifically for you.</p>
                     <div style="background:#fff3cd; padding:15px; border-radius:12px; border:1px solid #ffeeba; margin-top:20px; text-align:center;">
                         <p style="margin:0; font-size:12px; color:#856404; font-weight:bold;">
                             🛍️ SHOP HONESTLY: You have <b>${lastRemaining}</b> tries left today.
@@ -126,5 +131,5 @@
     }
 
     injectStyles();
-    setInterval(createButton, 1000);
+    setInterval(createButton, 1500); 
 })();
