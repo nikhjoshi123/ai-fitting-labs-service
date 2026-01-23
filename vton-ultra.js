@@ -1,53 +1,6 @@
-(function() {
-    // 1. YOUR CONTROL CENTERS
-    var GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbycyu6r5oMc3hAemOHwJ0g3Npc6k7S1XalPatII7B95U5oaWjRtlO9Pv916VgfwT5t0/exec"; 
-    var VERCEL_GATEKEEPER = "https://ai-fitting-labs-service-pigf.vercel.app/api"; 
-    var isBusy = false;
+// ... (Keep your CSS and Sync logic from the previous message) ...
 
-    // 2. LUXURY CSS (Added once at start)
-    var style = document.createElement("style");
-    style.innerHTML = `
-        .v-spin { width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; display:inline-block; animation: v-rot 0.8s linear infinite; margin-right:8px; }
-        @keyframes v-rot { to {transform:rotate(360deg)} }
-        .vton-container { background: #fff; width: 100%; max-width: 900px; display: flex; flex-direction: row; border-radius: 30px; overflow: hidden; box-shadow: 0 50px 100px rgba(0,0,0,0.5); animation: v-up 0.4s ease; }
-        .vton-img-side { flex: 1.2; background: #f4f4f4; position: relative; line-height: 0; }
-        .vton-img-side img { width: 100%; height: 100%; object-fit: cover; }
-        .vton-text-side { flex: 1; padding: 40px; display: flex; flex-direction: column; justify-content: center; font-family: sans-serif; }
-        .vton-privacy { background: #f9f9f9; padding: 20px; border-radius: 15px; border: 1px solid #eee; margin: 20px 0; }
-        #v-done { width: 100%; padding: 18px; background: #000; color: #fff; border-radius: 15px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        #v-done:hover { background: #333; }
-        @keyframes v-up { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
-        @media (max-width: 768px) { .vton-container { flex-direction: column; max-height: 95vh; overflow-y: auto; } .vton-img-side { height: 400px; } }
-    `;
-    document.head.appendChild(style);
-
-    function sync() {
-        if (isBusy) return;
-        fetch(GOOGLE_SHEET_URL + "?url=" + encodeURIComponent(window.location.hostname) + "&t=" + Date.now())
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                updateUI(data.status, data.canUse);
-            });
-    }
-
-    function updateUI(status, canUse) {
-        var btn = document.getElementById("ai-vton-btn");
-        if (!btn) {
-            btn = document.createElement("button");
-            btn.id = "ai-vton-btn";
-            btn.style.cssText = "position:fixed; bottom:30px; right:30px; z-index:2147483647; padding:16px 32px; color:#fff; border-radius:50px; font-weight:bold; border:none; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,0.4); display:block !important;";
-            document.body.appendChild(btn);
-        }
-
-        var isOff = (status !== "ACTIVE" || !canUse);
-        btn.innerHTML = isOff ? "🔒 Mirror Paused" : "✨ Virtual Try-On";
-        btn.style.background = isOff ? "#666" : "linear-gradient(135deg, #000, #444)";
-        
-        btn.onclick = function() {
-            if (isOff) return alert("Our AI service is currently in maintenance.");
-            startProcess(btn);
-        };
-    }
+    var lastRemaining = 5; // Default starting number
 
     function startProcess(btn) {
         var input = document.createElement("input");
@@ -60,13 +13,13 @@
 
             isBusy = true;
             btn.disabled = true;
-            btn.innerHTML = '<span class="v-spin"></span> ANALYZING STYLE...';
+            btn.innerHTML = '<span class="v-spin"></span> TAILORING...';
 
             var reader = new FileReader();
             reader.onload = function(re) {
-                // TALKING TO VERCEL (Key is hidden in Vercel)
                 fetch(VERCEL_GATEKEEPER, {
                     method: "POST",
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         inputs: { model_image: re.target.result, garment_image: prod.src, category: "auto" }
                     })
@@ -74,30 +27,20 @@
                     if (r.status === 403) throw new Error("LIMIT");
                     return r.json(); 
                 }).then(function(ai) {
-                    if (ai.id) poll(ai.id, btn);
+                    if (ai.id) {
+                        lastRemaining = ai.remaining_tries; // Store remaining count
+                        poll(ai.id, btn);
+                    }
                 }).catch(function(err) {
                     isBusy = false; btn.disabled = false;
                     btn.innerHTML = "✨ Virtual Try-On";
-                    if (err.message === "LIMIT") alert("You've reached your daily limit of 5 tries!");
-                    else alert("Connection error. Please try again.");
+                    if (err.message === "LIMIT") alert("You've used your 5 daily fits. Come back tomorrow for more style!");
+                    else alert("Connection error. Ensure your Vercel URL is correct.");
                 });
             };
-            reader.readAsDataURL(e.target.files[0]);
+            reader.readAsDataURL(file);
         };
         input.click();
-    }
-
-    function poll(id, btn) {
-        // Status checks still go to Fashn.ai (No key needed for public status)
-        fetch("https://api.fashn.ai/v1/status/" + id)
-            .then(function(r) { return r.json(); })
-            .then(function(d) {
-                if (d.status === "completed") {
-                    isBusy = false; btn.disabled = false;
-                    btn.innerHTML = "✨ Virtual Try-On";
-                    showPop(d.output[0]);
-                } else { setTimeout(function(){ poll(id, btn); }, 3000); }
-            });
     }
 
     function showPop(url) {
@@ -109,9 +52,16 @@
                 <div class="vton-text-side">
                     <h2 style="margin:0; font-size:26px; font-family:serif;">✨ Your Signature Look</h2>
                     <p style="color:#666; font-size:14px; margin-top:10px; line-height:1.5;">Our AI Stylist has tailored this piece for your silhouette.</p>
+                    
+                    <div style="background:#fff3cd; padding:12px; border-radius:12px; border:1px solid #ffeeba; margin-top:20px; text-align:center;">
+                        <p style="margin:0; font-size:12px; color:#856404; font-weight:bold;">
+                            🛍️ SHOP CAREFULLY: You have <b>${lastRemaining}</b> tries left today.
+                        </p>
+                    </div>
+
                     <div class="vton-privacy">
                         <p style="margin:0; font-size:11px; font-weight:900; letter-spacing:1px; color:#000;">🛡️ PRIVACY GUARANTEED</p>
-                        <p style="margin:8px 0 0; font-size:11px; color:#777; line-height:1.4;">Your image is secure and <b>never stored</b> on our servers. Your privacy is our priority.</p>
+                        <p style="margin:8px 0 0; font-size:11px; color:#777; line-height:1.4;">Your image is secure and <b>never stored</b> on our servers.</p>
                     </div>
                     <button id="v-done">DONE</button>
                 </div>
@@ -120,7 +70,4 @@
         document.body.appendChild(ov);
         document.getElementById("v-done").onclick = function() { ov.remove(); };
     }
-
-    sync();
-    setInterval(sync, 10000);
-})();
+// ... (rest of the script)
