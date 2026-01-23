@@ -9,7 +9,7 @@
             const data = await res.json();
             if (data.status === "REMOVE") return document.getElementById("ai-vton-btn")?.remove();
             render(data.canUse, data.status);
-        } catch (e) { console.log("Syncing Mirror..."); }
+        } catch (e) { console.log("Sync..."); }
     }
 
     function render(canUse, status) {
@@ -18,8 +18,8 @@
         btn.id = "ai-vton-btn";
         const active = (status === "ACTIVE" && canUse);
         btn.innerHTML = active ? "✨ Virtual Try-On" : "🔒 Mirror Paused";
-        btn.style.cssText = "position:fixed; bottom:30px; right:30px; z-index:2147483647; padding:16px 32px; color:#fff; border-radius:50px; font-weight:bold; border:none; cursor:pointer; font-family:sans-serif; text-transform:uppercase; letter-spacing:1px; transition: all 0.3s ease; background:" + (active ? "linear-gradient(135deg, #000 0%, #434343 100%)" : "#666") + "; box-shadow: 0 10px 30px rgba(0,0,0,0.4);";
-        btn.onclick = function() {
+        btn.style.cssText = "position:fixed; bottom:30px; right:30px; z-index:2147483647; padding:16px 32px; color:#fff; border-radius:50px; font-weight:bold; border:none; cursor:pointer; font-family:sans-serif; text-transform:uppercase; letter-spacing:1px; background:" + (active ? "linear-gradient(135deg, #000 0%, #434343 100%)" : "#666") + "; box-shadow: 0 10px 30px rgba(0,0,0,0.4);";
+        btn.onclick = () => {
             if (!active) return alert("Plan Expired.");
             const input = document.createElement("input");
             input.type = "file"; input.accept = "image/*";
@@ -35,54 +35,61 @@
 
         isBusy = true;
         btn.disabled = true;
-        btn.innerHTML = '<span class="premium-spinner"></span> PROCESSING...';
+        btn.innerHTML = '<span class="premium-spinner"></span> COMPRESSING...';
 
+        // 1. IMAGE COMPRESSOR (Prevents "Instant" Errors)
         const reader = new FileReader();
-        reader.onloadend = async function() {
-            let attempt = 0;
-            const tryFetch = async () => {
-                try {
-                    const res = await fetch(SCRIPT_URL, {
-                        method: "POST",
-                        body: JSON.stringify({
-                            model_name: "tryon-v1.6",
-                            inputs: { model_image: reader.result, garment_image: prodImg, category: "auto" }
-                        })
-                    });
-                    const aiData = await res.json();
-                    if (aiData.id) poll(aiData.id, btn);
-                    else throw new Error("Busy");
-                } catch (e) {
-                    if (attempt < 2) { // RETRY 2 TIMES BEFORE GIVING UP
-                        attempt++;
-                        setTimeout(tryFetch, 2000);
-                    } else {
-                        isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
-                        alert("The AI Stylist is popular right now! Please try one more time.");
-                    }
-                }
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width, height = img.height;
+                const max = 1024; // Resize to max 1024px for speed/stability
+                if (width > height) { if (width > max) { height *= max / width; width = max; } }
+                else { if (height > max) { width *= max / height; height = max; } }
+                canvas.width = width; canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7); // 70% quality
+                
+                sendToAI(compressedBase64, prodImg, btn);
             };
-            tryFetch();
+            img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     }
 
-    async function poll(id, btn) {
+    async function sendToAI(userImg, prodImg, btn) {
+        btn.innerHTML = '<span class="premium-spinner"></span> PROCESSING...';
         try {
-            const res = await fetch("https://api.fashn.ai/v1/status/" + id, {
-                headers: { "Authorization": "Bearer fa-psJSioorPgb9-5cT5HZYyoCGokJVywFgFOPWt" }
+            const res = await fetch(SCRIPT_URL, {
+                method: "POST",
+                body: JSON.stringify({
+                    model_name: "tryon-v1.6",
+                    inputs: { model_image: userImg, garment_image: prodImg, category: "auto" }
+                })
             });
-            const data = await res.json();
-            if (data.status === "completed") {
-                isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
-                showPopup(data.output[0]);
-            } else if (data.status === "failed") {
-                isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
-                alert("AI processing failed. Try a different photo.");
-            } else {
-                setTimeout(() => poll(id, btn), 3000);
-            }
-        } catch (e) { setTimeout(() => poll(id, btn), 3000); }
+            const aiData = await res.json();
+            if (aiData.id) poll(aiData.id, btn);
+            else throw new Error();
+        } catch (e) {
+            isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
+            alert("Connection Error. Please check if your Google Script is 'Deployed as Web App' for 'Anyone'.");
+        }
+    }
+
+    async function poll(id, btn) {
+        const res = await fetch("https://api.fashn.ai/v1/status/" + id, {
+            headers: { "Authorization": "Bearer fa-psJSioorPgb9-5cT5HZYyoCGokJVywFgFOPWt" }
+        });
+        const data = await res.json();
+        if (data.status === "completed") {
+            isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
+            showPopup(data.output[0]);
+        } else if (data.status === "failed") {
+            isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
+            alert("AI could not process this image.");
+        } else { setTimeout(() => poll(id, btn), 3000); }
     }
 
     function showPopup(url) {
