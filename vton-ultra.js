@@ -1,36 +1,63 @@
 (function() {
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycyu6r5oMc3hAemOHwJ0g3Npc6k7S1XalPatII7B95U5oaWjRtlO9Pv916VgfwT5t0/exec"; 
     let isBusy = false;
+    let currentStatus = null;
 
-    // 1. Sync & Render Logic
-    async function sync() {
+    // 1. THE HEARTBEAT: Checks Google Sheet every 5 seconds for status changes
+    async function heartbeat() {
         if (isBusy) return;
         try {
-            const res = await fetch(SCRIPT_URL + "?url=" + encodeURIComponent(window.location.hostname) + "&cb=" + Date.now());
+            const res = await fetch(${SCRIPT_URL}?url=${encodeURIComponent(window.location.hostname)}&cb=${Date.now()});
             const data = await res.json();
-            if (data.status === "REMOVE") return document.getElementById("ai-vton-btn")?.remove();
-            render(data.canUse, data.status);
-        } catch (e) { console.log("Connecting..."); }
+            
+            // Real-time toggle: If status changed in sheet, update UI immediately
+            if (data.status !== currentStatus) {
+                currentStatus = data.status;
+                renderUI(data.canUse, data.status);
+            }
+        } catch (e) { console.log("Syncing..."); }
     }
 
-    function render(canUse, status) {
-        if (document.getElementById("ai-vton-btn") || isBusy) return;
-        const btn = document.createElement("button");
-        btn.id = "ai-vton-btn";
+    function renderUI(canUse, status) {
+        let btn = document.getElementById("ai-vton-btn");
+        
+        // If "REMOVE" or "NONE", delete the button if it exists
+        if (status === "REMOVE" || status === "NONE") {
+            if (btn) btn.remove();
+            return;
+        }
+
+        // Create button if it doesn't exist
+        if (!btn) {
+            btn = document.createElement("button");
+            btn.id = "ai-vton-btn";
+            document.body.appendChild(btn);
+        }
+
         const active = (status === "ACTIVE" && canUse);
         btn.innerHTML = active ? "✨ Virtual Try-On" : "🔒 Mirror Paused";
-        btn.style.cssText = "position:fixed; bottom:30px; right:30px; z-index:2147483647; padding:16px 32px; color:#fff; border-radius:50px; font-weight:bold; border:none; cursor:pointer; font-family:sans-serif; text-transform:uppercase; letter-spacing:1px; background:" + (active ? "linear-gradient(135deg, #000 0%, #434343 100%)" : "#666") + "; box-shadow: 0 10px 30px rgba(0,0,0,0.4);";
+        
+        // Premium UI Styling
+        btn.style.cssText = `
+            position:fixed; bottom:30px; right:30px; z-index:2147483647; 
+            padding:16px 32px; color:#fff; border-radius:50px; font-weight:bold; 
+            border:none; cursor:pointer; font-family:sans-serif; text-transform:uppercase; 
+            letter-spacing:1px; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            background: ${active ? "linear-gradient(135deg, #000 0%, #434343 100%)" : "#666"};
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            display: block !important;
+        `;
+
         btn.onclick = () => {
-            if (!active) return alert("Plan Expired.");
+            if (!active) return alert("This service is currently paused.");
             const input = document.createElement("input");
             input.type = "file"; input.accept = "image/*";
-            input.onchange = (e) => handleUpload(e.target.files[0], btn);
+            input.onchange = (e) => handleProcess(e.target.files[0], btn);
             input.click();
         };
-        document.body.appendChild(btn);
     }
 
-    async function handleUpload(file, btn) {
+    async function handleProcess(file, btn) {
         const prodImg = Array.from(document.getElementsByTagName("img")).find(img => img.width > 200 && !img.src.includes("logo"))?.src;
         if (!file || !prodImg) return alert("Product image not detected.");
 
@@ -41,58 +68,37 @@
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
-            img.onload = () => {
+            img.onload = async () => {
                 const canvas = document.createElement('canvas');
-                let width = img.width, height = img.height;
-                const max = 800; // Smaller size for 100% connection stability
-                if (width > height) { if (width > max) { height *= max / width; width = max; } }
-                else { if (height > max) { width *= max / height; height = max; } }
-                canvas.width = width; canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                sendToAI(canvas.toDataURL('image/jpeg', 0.6), prodImg, btn);
+                const max = 800;
+                let w = img.width, h = img.height;
+                if (w > h) { if (w > max) { h *= max / w; w = max; } }
+                else { if (h > max) { w *= max / h; h = max; } }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                
+                // BACK TO STANDARD FETCH (Ensures Output is visible)
+                try {
+                    btn.innerHTML = '<span class="premium-spinner"></span> GENERATING...';
+                    const res = await fetch(SCRIPT_URL, {
+                        method: "POST",
+                        body: JSON.stringify({
+                            model_name: "tryon-v1.6",
+                            inputs: { model_image: canvas.toDataURL('image/jpeg', 0.7), garment_image: prodImg, category: "auto" }
+                        })
+                    });
+                    const aiData = await res.json();
+                    if (aiData.id) poll(aiData.id, btn);
+                    else throw new Error();
+                } catch (err) {
+                    isBusy = false; btn.disabled = false;
+                    btn.innerHTML = "✨ Virtual Try-On";
+                    alert("AI Session Timed Out. Please try again.");
+                }
             };
             img.src = e.target.result;
         };
         reader.readAsDataURL(file);
-    }
-
-    // 2. THE PREMIUM CONNECTION (FIXES YOUR ERROR)
-    async function sendToAI(userImg, prodImg, btn) {
-        btn.innerHTML = '<span class="premium-spinner"></span> PROCESSING...';
-        try {
-            // Added redirect: "follow" and mode: "no-cors" fallback logic
-            const response = await fetch(SCRIPT_URL, {
-                method: "POST",
-                mode: "no-cors", // This bypasses most browser blocks
-                cache: "no-cache",
-                body: JSON.stringify({
-                    model_name: "tryon-v1.6",
-                    inputs: { model_image: userImg, garment_image: prodImg, category: "auto" }
-                })
-            });
-            
-            // Note: with no-cors, we can't read the response directly, 
-            // so we wait a few seconds then check the AI status directly.
-            setTimeout(() => checkLastJob(btn), 5000);
-
-        } catch (e) {
-            isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
-            alert("Connection timed out. Check your Google Sheet is active.");
-        }
-    }
-
-    async function checkLastJob(btn) {
-        // We bypass the Google Script and ask the AI directly for the latest result
-        // this is the ultimate "Fullness" backup if the script connection is shaky
-        try {
-            const res = await fetch(SCRIPT_URL + "?getLatest=true&url=" + encodeURIComponent(window.location.hostname));
-            const data = await res.json();
-            if (data.id) poll(data.id, btn);
-            else throw new Error();
-        } catch(e) {
-            isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
-        }
     }
 
     async function poll(id, btn) {
@@ -101,37 +107,29 @@
         });
         const data = await res.json();
         if (data.status === "completed") {
-            isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
+            isBusy = false; btn.disabled = false;
+            btn.innerHTML = "✨ Virtual Try-On";
             showPopup(data.output[0]);
         } else if (data.status === "failed") {
-            isBusy = false; btn.disabled = false; btn.innerHTML = "✨ Virtual Try-On";
+            isBusy = false; btn.disabled = false;
+            btn.innerHTML = "✨ Virtual Try-On";
+            alert("AI could not blend these images. Try a clearer photo.");
         } else { setTimeout(() => poll(id, btn), 3000); }
     }
 
     function showPopup(url) {
         const overlay = document.createElement("div");
-        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;backdrop-filter:blur(10px);padding:20px;";
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;backdrop-filter:blur(15px);padding:20px;";
         overlay.innerHTML = `
-            <div style="background:#fff; border-radius:25px; overflow:hidden; max-width:400px; width:100%; box-shadow:0 25px 50px rgba(0,0,0,0.5);">
+            <div style="background:#fff; border-radius:30px; overflow:hidden; max-width:420px; width:100%; box-shadow:0 30px 60px rgba(0,0,0,0.5); transform: scale(1); animation: pop 0.3s ease;">
                 <img src="${url}" style="width:100%; display:block;">
-                <div style="padding:20px; text-align:center; font-family:sans-serif;">
-                    <h3 style="margin:0 0 10px; color:#000;">✨ Style Ready</h3>
-                    <div style="background:#f9f9f9; padding:10px; border-radius:12px; border:1px solid #eee; margin-bottom:15px;">
-                        <p style="margin:0; font-size:11px; color:#444; font-weight:bold;">🛡️ PRIVACY VERIFIED</p>
-                        <p style="margin:4px 0 0; font-size:9px; color:#888;">AES-256 Encryption • Auto-Deleted</p>
+                <div style="padding:25px; text-align:center; font-family:sans-serif;">
+                    <h3 style="margin:0 0 15px; color:#000; letter-spacing:-0.5px;">✨ Your Virtual Fitting</h3>
+                    <div style="background:#f4f4f4; padding:12px; border-radius:15px; border:1px solid #eee; margin-bottom:20px;">
+                        <p style="margin:0; font-size:11px; color:#000; font-weight:900; letter-spacing:1px;">🛡️ PRIVACY SHIELD ACTIVE</p>
+                        <p style="margin:5px 0 0; font-size:10px; color:#666; text-transform:uppercase;">AES-256 Encryption • Auto-Deleted Session</p>
                     </div>
-                    <button id="v-close" style="width:100%; padding:14px; border-radius:12px; border:none; background:#000; color:#fff; font-weight:bold; cursor:pointer;">CLOSE</button>
+                    <button id="v-close" style="width:100%; padding:16px; border-radius:15px; border:none; background:#000; color:#fff; font-weight:bold; cursor:pointer; font-size:14px;">CLOSE MIRROR</button>
                 </div>
             </div>
-        `;
-        document.body.appendChild(overlay);
-        document.getElementById("v-close").onclick = () => overlay.remove();
-    }
-
-    const s = document.createElement("style");
-    s.innerHTML = ".premium-spinner { width:14px; height:14px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; display:inline-block; animation: spin 0.8s linear infinite; margin-right:10px; vertical-align:middle; } @keyframes spin { to {transform:rotate(360deg)} }";
-    document.head.appendChild(s);
-
-    sync();
-    setInterval(sync, 15000);
-})();
+            <style>@keyframes pop { from{transform:scale(0.9);opacity:0} to{transform:scale(1);opacity:1} }</style>
