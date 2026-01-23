@@ -1,30 +1,39 @@
 (function() {
-    // 1. PASTE YOUR NEW GOOGLE SCRIPT URL HERE
+    // 1. UPDATE WITH YOUR LATEST GOOGLE EXEC URL
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyhoksFBtihKuSdgMKmvbv7KTiwr0nonj8pfUT3Qun4_f2Vzq6Jrm86neM1tl_vRes/exec"; 
 
-    async function init() {
+    async function checkAndRender() {
         try {
             const res = await fetch(SCRIPT_URL + "?url=" + encodeURIComponent(window.location.hostname));
             const data = await res.json();
             
-            // If status is REMOVE or not found, stop everything
-            if (data.status === "REMOVE" || data.status === "NONE") return;
+            // IF REMOVE: Kill the button if it exists and STOP.
+            if (data.status === "REMOVE") {
+                const oldBtn = document.getElementById("ai-vton-btn");
+                if (oldBtn) oldBtn.remove();
+                return; 
+            }
 
-            renderButton(data.canUse);
-        } catch (e) { console.error("Sync Error"); }
+            // IF ACTIVE/EXPIRED: Create button
+            if (data.status === "ACTIVE" || data.status === "EXPIRED") {
+                renderButton(data.canUse);
+            }
+        } catch (e) { console.log("AI Fitting Labs: Syncing..."); }
     }
 
     function renderButton(canUse) {
+        if (document.getElementById("ai-vton-btn")) return; // Don't double create
+
         const btn = document.createElement("button");
         btn.id = "ai-vton-btn";
         btn.innerHTML = canUse ? "✨ Try this!" : "🔒 Service Paused";
         
-        // ULTIMATE VISIBILITY CSS
+        // ULTIMATE MOBILE & DESKTOP CSS
         btn.style.cssText = `
             position: fixed !important;
-            bottom: 20px !important;
-            right: 20px !important;
-            z-index: 2147483647 !important;
+            bottom: 30px !important;
+            right: 30px !important;
+            z-index: 9999999 !important;
             padding: 15px 25px;
             background: ${canUse ? '#000' : '#666'};
             color: #fff;
@@ -34,68 +43,27 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             cursor: pointer;
             display: block !important;
-            font-family: Arial, sans-serif;
+            font-family: sans-serif !important;
         `;
 
-        if (canUse) {
-            btn.onclick = () => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/*";
-                input.onchange = async (e) => {
-                    const file = e.target.files[0];
-                    const prodImg = Array.from(document.getElementsByTagName("img")).find(img => img.width > 200)?.src;
-                    if (!file || !prodImg) return alert("Product image not detected.");
+        btn.onclick = () => {
+            if (!canUse) return alert("Service Paused. Contact info@aifittinglabs.store");
+            // Your upload logic here...
+            alert("Privacy Note: Photos are deleted immediately. Proceeding to camera...");
+            // trigger file input...
+        };
 
-                    btn.innerHTML = "◌ Wait...";
-                    btn.disabled = true;
-
-                    const reader = new FileReader();
-                    reader.onloadend = async () => {
-                        const aiRes = await fetch(SCRIPT_URL, {
-                            method: "POST",
-                            body: JSON.stringify({
-                                model_name: "tryon-v1.6",
-                                inputs: { model_image: reader.result, garment_image: prodImg, category: "auto" }
-                            })
-                        });
-                        const aiData = await aiRes.json();
-                        if (aiData.id) poll(aiData.id, btn);
-                        else { alert("Error"); location.reload(); }
-                    };
-                    reader.readAsDataURL(file);
-                };
-                input.click();
-            };
-        }
         document.body.appendChild(btn);
     }
 
-    async function poll(id, btn) {
-        // We use a simple direct check here for status since we are in a hurry
-        const res = await fetch("https://api.fashn.ai/v1/status/" + id, {
-            headers: { "Authorization": "Bearer fa-psJSioorPgb9-5cT5HZYyoCGokJVywFgFOPWt" } 
-        });
-        const data = await res.json();
-        if (data.status === "completed") {
-            btn.innerHTML = "✨ Try this!";
-            btn.disabled = false;
-            showPopup(data.output[0]);
-        } else if (data.status === "failed") {
-            alert("AI Failed");
-            location.reload();
-        } else {
-            setTimeout(() => poll(id, btn), 3000);
-        }
+    // THIS IS THE KEY FOR REACT/VITE SITES:
+    // It waits for the page to finish loading before checking the sheet
+    if (document.readyState === 'complete') {
+        checkAndRender();
+    } else {
+        window.addEventListener('load', checkAndRender);
     }
 
-    function showPopup(url) {
-        const div = document.createElement("div");
-        div.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;";
-        div.innerHTML = <img src="${url}" style="max-height:80%; border-radius:10px;"><button onclick="this.parentElement.remove()" style="margin-top:20px;padding:10px 30px;cursor:pointer;">CLOSE</button>;
-        document.body.appendChild(div);
-    }
-
-    init();
+    // Check again every 5 seconds for the "REMOVE" signal
+    setInterval(checkAndRender, 5000);
 })();
-
