@@ -3,27 +3,58 @@ import json
 import requests
 import os
 
-# This key will be hidden in Vercel Settings, not in the code!
 API_KEY = os.environ.get("FASHN_API_KEY")
+usage_tracker = {} 
+MAX_TRIES = 5 
 
 class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        data = json.loads(post_data)
-
-        # Direct call to AI with HIDDEN KEY
-        response = requests.post(
-            "https://api.fashn.ai/v1/run",
-            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model_name": "tryon-v1.6",
-                "inputs": data["inputs"]
-            }
-        )
-
+    def do_OPTIONS(self):
+        # FIXES CONNECTION ERROR: Tells the browser it is safe to talk to Vercel
         self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*') # Control who uses it
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
-        self.wfile.write(response.text.encode())
+
+    def do_POST(self):
+        client_ip = self.headers.get('x-forwarded-for', 'unknown').split(',')[0]
+        current_usage = usage_tracker.get(client_ip, 0)
+
+        # CHECK LIMIT
+        if current_usage >= MAX_TRIES:
+            self.send_response(403)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Limit Reached"}).encode())
+            return
+
+        content_length = int(self.headers['Content-Length'])
+        data = json.loads(self.rfile.read(content_length))
+
+        try:
+            response = requests.post(
+                "https://api.fashn.ai/v1/run",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                json={"model_name": "tryon-v1.6", "inputs": data["inputs"]},
+                timeout=30
+            )
+            
+            usage_tracker[client_ip] = current_usage + 1
+            remaining = MAX_TRIES - usage_tracker[client_ip]
+            
+            # Combine AI response with our "Remaining" info
+            result = response.json()
+            result["remaining_tries"] = remaining
+
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+            
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(str(e).encode())
