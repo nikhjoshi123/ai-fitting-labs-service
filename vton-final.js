@@ -1,6 +1,6 @@
 (function() {
     // 1. PASTE YOUR NEW GOOGLE SCRIPT URL HERE
-    const SCRIPT_URL = "PASTE_YOUR_NEW_EXEC_URL_HERE"; 
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyhoksFBtihKuSdgMKmvbv7KTiwr0nonj8pfUT3Qun4_f2Vzq6Jrm86neM1tl_vRes/exec"; 
 
     async function init() {
         try {
@@ -98,3 +98,4 @@
 
     init();
 })();
+
