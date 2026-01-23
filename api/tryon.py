@@ -9,18 +9,18 @@ MAX_TRIES = 5
 
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
-        # FIXES CONNECTION ERROR: Tells the browser it is safe to talk to Vercel
+        # This part tells the browser: "It's okay to send data here"
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', '*') # In production, replace * with your store URL
         self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
     def do_POST(self):
+        # 1. Identity & Limit Check
         client_ip = self.headers.get('x-forwarded-for', 'unknown').split(',')[0]
         current_usage = usage_tracker.get(client_ip, 0)
 
-        # CHECK LIMIT
         if current_usage >= MAX_TRIES:
             self.send_response(403)
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -29,6 +29,7 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Limit Reached"}).encode())
             return
 
+        # 2. Process Request
         content_length = int(self.headers['Content-Length'])
         data = json.loads(self.rfile.read(content_length))
 
@@ -41,11 +42,8 @@ class handler(BaseHTTPRequestHandler):
             )
             
             usage_tracker[client_ip] = current_usage + 1
-            remaining = MAX_TRIES - usage_tracker[client_ip]
-            
-            # Combine AI response with our "Remaining" info
             result = response.json()
-            result["remaining_tries"] = remaining
+            result["remaining_tries"] = MAX_TRIES - usage_tracker[client_ip]
 
             self.send_response(200)
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -57,4 +55,4 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(500)
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(str(e).encode())
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
