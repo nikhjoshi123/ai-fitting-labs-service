@@ -1,5 +1,5 @@
 (function() {
-    var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyCg7QKxQ1KkW7BD4feF-v5BGYnwtz3UP4yxAjH2gxyIXi7tZNMbGxemFVzj4gZVxkL/exec"; 
+    var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycyu6r5oMc3hAemOHwJ0g3Npc6k7S1XalPatII7B95U5oaWjRtlO9Pv916VgfwT5t0/exec"; 
     var isBusy = false;
 
     function sync() {
@@ -15,32 +15,28 @@
                 document.body.appendChild(btn);
             }
 
-            // CLEAN LOGIC: Only show "Paused" if status is explicitly EXPIRE or PAUSE
-            var isPaused = (data.status === "PAUSE" || data.status === "EXPIRE" || data.canUse === false);
+            var isPaused = (data.status === "PAUSE" || data.status === "EXPIRE" || !data.canUse);
             
             if (isPaused) {
                 btn.innerHTML = "🔒 Service Paused";
                 btn.style.background = "#666666";
-                btn.onclick = function() { alert("Plan expired or paused in dashboard."); };
+                btn.onclick = function() { alert("Mirror is currently offline."); };
             } else {
                 btn.innerHTML = "✨ Try-On Mirror";
-                btn.style.background = "linear-gradient(135deg, #000000, #434343)";
+                btn.style.background = "linear-gradient(135deg, #000, #434343)";
                 btn.onclick = function() { startUpload(btn); };
             }
-        }).catch(function(e) { console.log("Mirror Syncing..."); });
+        });
     }
 
     function startUpload(btn) {
-        if (isBusy) return;
         var input = document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
+        input.type = "file"; input.accept = "image/*";
         input.onchange = function(e) {
             var file = e.target.files[0];
-            var imgs = Array.from(document.getElementsByTagName("img"));
-            var prodImg = imgs.find(function(i) { return i.width > 200 && !i.src.includes("logo"); });
+            var prodImg = Array.from(document.getElementsByTagName("img")).find(function(i) { return i.width > 200 && !i.src.includes("logo"); });
             
-            if (!file || !prodImg) return alert("Product not detected.");
+            if (!file || !prodImg) return alert("Product image not found.");
 
             isBusy = true;
             btn.disabled = true;
@@ -48,9 +44,15 @@
 
             var reader = new FileReader();
             reader.onloadend = function() {
-                fetch(SCRIPT_URL, {
+                // DIRECT CALL TO AI (Bypassing Google Sheet Faults)
+                fetch("https://api.fashn.ai/v1/run", {
                     method: "POST",
+                    headers: { 
+                        "Authorization": "Bearer " + window.VTON_CONFIG.key,
+                        "Content-Type": "application/json"
+                    },
                     body: JSON.stringify({
+                        model_name: "tryon-v1.6",
                         inputs: { model_image: reader.result, garment_image: prodImg.src, category: "auto" }
                     })
                 }).then(function(res) { return res.json(); }).then(function(ai) {
@@ -58,8 +60,7 @@
                     else throw new Error();
                 }).catch(function() {
                     isBusy = false; btn.disabled = false;
-                    alert("AI is busy. Please try one more time.");
-                    sync();
+                    alert("AI is busy. Please try again.");
                 });
             };
             reader.readAsDataURL(file);
@@ -69,12 +70,14 @@
 
     function poll(id, btn) {
         fetch("https://api.fashn.ai/v1/status/" + id, {
-            headers: { "Authorization": "Bearer fa-psJSioorPgb9-5cT5HZYyoCGokJVywFgFOPWt" }
+            headers: { "Authorization": "Bearer " + window.VTON_CONFIG.key }
         }).then(function(res) { return res.json(); }).then(function(data) {
             if (data.status === "completed") {
                 isBusy = false; btn.disabled = false;
                 showResult(data.output[0]);
-                sync();
+            } else if (data.status === "failed") {
+                isBusy = false; btn.disabled = false;
+                alert("AI failed to process image.");
             } else {
                 setTimeout(function() { poll(id, btn); }, 3000);
             }
