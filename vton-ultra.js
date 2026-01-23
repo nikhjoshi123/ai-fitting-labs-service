@@ -1,6 +1,6 @@
 (function() {
-    // 1. YOUR VERIFIED GOOGLE URL
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwFONKsCMEb6rAYt_xewl52PHWUHsUiCds9pxAGs2noWhCUQCgmzsJ6-e-7zYshwOvV/exec"; 
+    c// 1. YOUR VERIFIED GOOGLE URL
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycyu6r5oMc3hAemOHwJ0g3Npc6k7S1XalPatII7B95U5oaWjRtlO9Pv916VgfwT5t0/exec"; 
 
     async function init() {
         try {
@@ -112,3 +112,4 @@
     else window.addEventListener('load', init);
     setInterval(init, 15000);
 })();
+
