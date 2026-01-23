@@ -1,6 +1,6 @@
 (function() {
     const GOOGLE_URL = "https://script.google.com/macros/s/AKfycbycyu6r5oMc3hAemOHwJ0g3Npc6k7S1XalPatII7B95U5oaWjRtlO9Pv916VgfwT5t0/exec"; 
-    const VERCEL_URL = "/api/tryon"; 
+  const VERCEL_URL = "https://ai-fitting-labs-service-pigf.vercel.app/api/tryon";
     let isBusy = false;
     let lastRemaining = 5;
 
@@ -133,4 +133,5 @@
     injectStyles();
     setInterval(createButton, 1500); 
 })();
+
 
