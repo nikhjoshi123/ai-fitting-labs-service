@@ -4,38 +4,49 @@
     let isBusy = false;
     let lastRemaining = 5;
 
-    // 1. STYLES
-    const s = document.createElement("style");
-    s.innerHTML = `
-        .v-spin { width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; display:inline-block; animation: v-rot 0.8s linear infinite; margin-right:8px; }
-        @keyframes v-rot { to {transform:rotate(360deg)} }
-        .vton-container { background: #fff; width: 100%; max-width: 900px; display: flex; flex-direction: row; border-radius: 30px; overflow: hidden; box-shadow: 0 50px 100px rgba(0,0,0,0.5); font-family: sans-serif; }
-        .vton-img-side { flex: 1.2; background: #f4f4f4; line-height:0; }
-        .vton-img-side img { width: 100%; height: 100%; object-fit: cover; }
-        .vton-text-side { flex: 1; padding: 40px; display: flex; flex-direction: column; justify-content: center; }
-        #v-done { width: 100%; padding: 18px; background: #000; color: #fff; border-radius: 15px; border: none; font-weight: bold; cursor: pointer; }
-        @media (max-width: 768px) { .vton-container { flex-direction: column; max-height: 90vh; overflow-y: auto; } .vton-img-side { height: 350px; } }
-    `;
-    document.head.appendChild(s);
+    function init() {
+        // SAFETY CHECK: Ensure the body exists before doing anything
+        if (!document.body) {
+            setTimeout(init, 100);
+            return;
+        }
 
-    // 2. THE FORCE-CREATE FUNCTION
+        // 1. STYLES
+        const s = document.createElement("style");
+        s.innerHTML = `
+            .v-spin { width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; display:inline-block; animation: v-rot 0.8s linear infinite; margin-right:8px; }
+            @keyframes v-rot { to {transform:rotate(360deg)} }
+            .vton-container { background: #fff; width: 100%; max-width: 900px; display: flex; flex-direction: row; border-radius: 30px; overflow: hidden; box-shadow: 0 50px 100px rgba(0,0,0,0.5); font-family: sans-serif; }
+            .vton-img-side { flex: 1.2; background: #f4f4f4; line-height:0; }
+            .vton-img-side img { width: 100%; height: 100%; object-fit: cover; }
+            .vton-text-side { flex: 1; padding: 40px; display: flex; flex-direction: column; justify-content: center; }
+            #v-done { width: 100%; padding: 18px; background: #000; color: #fff; border-radius: 15px; border: none; font-weight: bold; cursor: pointer; }
+            @media (max-width: 768px) { .vton-container { flex-direction: column; max-height: 90vh; overflow-y: auto; } .vton-img-side { height: 350px; } }
+        `;
+        document.head.appendChild(s);
+
+        // 2. FORCE-CREATE BUTTON
+        createButton();
+
+        // 3. WATCHER (If the site deletes the button, put it back)
+        const observer = new MutationObserver(() => {
+            if (!document.getElementById("ai-vton-btn")) createButton();
+        });
+        observer.observe(document.body, { childList: true });
+    }
+
     function createButton() {
-        if (document.getElementById("ai-vton-btn")) return;
+        if (document.getElementById("ai-vton-btn") || !document.body) return;
         const btn = document.createElement("button");
         btn.id = "ai-vton-btn";
-        btn.innerHTML = "✨ See It On You";
+        btn.innerHTML = "✨ See It On You"; // YOUR TRIGGER TEXT
         btn.style.cssText = "position:fixed; bottom:30px; right:30px; z-index:2147483647; padding:16px 32px; color:#fff; border-radius:50px; font-weight:bold; border:none; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,0.4); background: linear-gradient(135deg, #000, #444); display:block !important;";
         btn.onclick = () => trigger(btn);
         document.body.appendChild(btn);
         sync(btn);
     }
 
-    // 3. THE WATCHER (Prevents the button from disappearing)
-    const observer = new MutationObserver(() => {
-        if (!document.getElementById("ai-vton-btn")) createButton();
-    });
-    observer.observe(document.body, { childList: true });
-
+    // --- REST OF THE LOGIC (Sync, Trigger, Poll, ShowPop) ---
     function sync(btn) {
         if (isBusy) return;
         fetch(GOOGLE_URL + "?url=" + encodeURIComponent(window.location.hostname) + "&cb=" + Date.now())
@@ -112,5 +123,6 @@
         document.getElementById("v-done").onclick = () => ov.remove();
     }
 
-    createButton();
+    // START THE ENGINE
+    init();
 })();
