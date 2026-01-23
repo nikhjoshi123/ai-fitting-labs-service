@@ -1,39 +1,33 @@
 (function() {
-    // 1. UPDATE WITH YOUR LATEST GOOGLE EXEC URL
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyhoksFBtihKuSdgMKmvbv7KTiwr0nonj8pfUT3Qun4_f2Vzq6Jrm86neM1tl_vRes/exec"; 
 
-    async function checkAndRender() {
+    async function init() {
+        console.log("AI Fitting Labs: Initializing...");
         try {
             const res = await fetch(SCRIPT_URL + "?url=" + encodeURIComponent(window.location.hostname));
             const data = await res.json();
-            
-            // IF REMOVE: Kill the button if it exists and STOP.
-            if (data.status === "REMOVE") {
-                const oldBtn = document.getElementById("ai-vton-btn");
-                if (oldBtn) oldBtn.remove();
-                return; 
-            }
+            console.log("AI Fitting Labs: Status received ->", data.status);
 
-            // IF ACTIVE/EXPIRED: Create button
-            if (data.status === "ACTIVE" || data.status === "EXPIRED") {
-                renderButton(data.canUse);
-            }
-        } catch (e) { console.log("AI Fitting Labs: Syncing..."); }
+            if (data.status === "REMOVE") return;
+
+            renderButton(data.canUse);
+        } catch (e) { 
+            console.error("AI Fitting Labs: Connection failed", e); 
+        }
     }
 
     function renderButton(canUse) {
-        if (document.getElementById("ai-vton-btn")) return; // Don't double create
+        if (document.getElementById("ai-vton-btn")) return;
 
         const btn = document.createElement("button");
         btn.id = "ai-vton-btn";
         btn.innerHTML = canUse ? "✨ Try this!" : "🔒 Service Paused";
         
-        // ULTIMATE MOBILE & DESKTOP CSS
         btn.style.cssText = `
             position: fixed !important;
             bottom: 30px !important;
             right: 30px !important;
-            z-index: 9999999 !important;
+            z-index: 2147483647 !important;
             padding: 15px 25px;
             background: ${canUse ? '#000' : '#666'};
             color: #fff;
@@ -44,26 +38,22 @@
             cursor: pointer;
             display: block !important;
             font-family: sans-serif !important;
+            -webkit-appearance: none;
         `;
 
         btn.onclick = () => {
             if (!canUse) return alert("Service Paused. Contact info@aifittinglabs.store");
-            // Your upload logic here...
-            alert("Privacy Note: Photos are deleted immediately. Proceeding to camera...");
-            // trigger file input...
+            
+            const consent = confirm("🛡️ PRIVACY PROTECTED\n\nYour photo is processed securely and deleted immediately. We do not store your data.\n\nDo you want to proceed?");
+            if (consent) {
+                // Trigger file upload logic here
+                alert("Opening Camera/Gallery...");
+            }
         };
 
         document.body.appendChild(btn);
     }
 
-    // THIS IS THE KEY FOR REACT/VITE SITES:
-    // It waits for the page to finish loading before checking the sheet
-    if (document.readyState === 'complete') {
-        checkAndRender();
-    } else {
-        window.addEventListener('load', checkAndRender);
-    }
-
-    // Check again every 5 seconds for the "REMOVE" signal
-    setInterval(checkAndRender, 5000);
+    if (document.readyState === 'complete') { init(); } 
+    else { window.addEventListener('load', init); }
 })();
