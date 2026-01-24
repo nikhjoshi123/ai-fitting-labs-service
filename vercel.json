@@ -1,6 +1,19 @@
 {
   "version": 2,
-  "rewrites": [
-    { "source": "/api/tryon", "destination": "/api/index.py" }
+  "functions": {
+    "api/index.py": {
+      "runtime": "python@3.9"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/tryon",
+      "dest": "api/index.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
+    }
   ]
 }
