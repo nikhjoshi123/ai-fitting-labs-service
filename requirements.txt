@@ -1,0 +1,2 @@
+upstash-redis
+requests
