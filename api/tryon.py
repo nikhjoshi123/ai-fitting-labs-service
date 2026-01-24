@@ -15,7 +15,7 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        # HANDLE STATUS CHECK (POLLING)
+        # THIS PREVENTS THE 401 ERROR IN YOUR IMAGE
         query = parse_qs(urlparse(self.path).query)
         prediction_id = query.get('id', [None])[0]
         
@@ -23,6 +23,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_error(400, "Missing ID")
             return
 
+        # Vercel uses the API_KEY safely here
         response = requests.get(
             f"https://api.fashn.ai/v1/status/{prediction_id}",
             headers={"Authorization": f"Bearer {API_KEY}"}
@@ -35,7 +36,6 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(response.json()).encode())
 
     def do_POST(self):
-        # HANDLE STARTING THE AI
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length)
         data = json.loads(body)
