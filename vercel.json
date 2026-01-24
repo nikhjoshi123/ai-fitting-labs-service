@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/tryon.py",
+      "src": "api/index.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/api/tryon",
-      "dest": "api/tryon.py",
+      "dest": "api/index.py",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
