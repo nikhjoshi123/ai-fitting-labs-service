@@ -2,12 +2,9 @@ from http.server import BaseHTTPRequestHandler
 import json
 import requests
 import os
-from upstash_redis import Redis # Use this library for Vercel KV/Upstash
+from upstash_redis import Redis
 
-# 1. This line automatically finds the 'URL' and 'TOKEN' Vercel created for you
-# You don't need to paste anything here!
 redis = Redis.from_env()
-
 FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 
 class handler(BaseHTTPRequestHandler):
@@ -16,19 +13,24 @@ class handler(BaseHTTPRequestHandler):
         data = json.loads(self.rfile.read(content_length))
         client_key = data.get("client_key", "TEST_001")
 
-        # 2. Check the database
+        # --- AUTO-SETUP FOR NEW KEYS ---
         status = redis.get(client_key)
+        
+        # If the key doesn't exist yet, we create it as 'active' automatically
+        if status is None:
+            redis.set(client_key, "active")
+            status = "active"
 
+        # --- THE BLOCKER ---
         if status != "active":
             self.send_response(200)
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            msg = f"Account {client_key} is {status if status else 'not found'}."
-            self.wfile.write(json.dumps({"error": msg}).encode())
+            self.wfile.write(json.dumps({"error": f"Status: {status}. Contact Admin."}).encode())
             return
 
-        # 3. If active, run AI
+        # --- RUN AI ---
         ai_resp = requests.post(
             "https://api.fashn.ai/v1/run",
             headers={"Authorization": f"Bearer {FASHN_API_KEY}", "Content-Type": "application/json"},
