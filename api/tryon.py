@@ -2,11 +2,8 @@ from http.server import BaseHTTPRequestHandler
 import json
 import requests
 import os
-from urllib.parse import urlparse, parse_qs
 
-# Environment Variables
 FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
-# Your new App URL should be in Vercel as SHEET_URL
 SHEET_API_URL = os.environ.get("SHEET_URL") 
 
 class handler(BaseHTTPRequestHandler):
@@ -17,80 +14,52 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
-    def do_GET(self):
-        query = parse_qs(urlparse(self.path).query)
-        prediction_id = query.get('id', [None])[0]
-        if not prediction_id:
-            self.send_error(400, "Missing ID")
-            return
-
-        response = requests.get(
-            f"https://api.fashn.ai/v1/status/{prediction_id}",
-            headers={"Authorization": f"Bearer {FASHN_API_KEY}"}
-        )
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(response.json()).encode())
-
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(content_length)
-        data = json.loads(body)
-        
-        # Get the key from the website request
-        client_key = data.get("client_key", "TEST_001") 
+        data = json.loads(self.rfile.read(content_length))
+        client_key = data.get("client_key", "TEST_001")
 
-        # --- THE GATEKEEPER CHECK ---
+        # --- THE GATEKEEPER ---
         try:
-            # 1. Ask Google Sheet about this client
-            sheet_resp = requests.get(f"{SHEET_API_URL}?key={client_key}", timeout=10, allow_redirects=True)
-            sheet_data = sheet_resp.json()
+            # Check the Google Sheet
+            sheet_resp = requests.get(f"{SHEET_API_URL}?key={client_key}", timeout=10)
+            sheet_json = sheet_resp.json()
             
-            status = str(sheet_data.get("status", "")).strip().lower()
-            remaining = sheet_data.get("remaining", 0)
+            status = str(sheet_json.get("status", "")).strip().upper()
+            
+            # IF NOT ACTIVE, KILL THE PROCESS IMMEDIATELY
+            if status != "ACTIVE":
+                self.send_response(200) # Send 200 so the browser can read the error message
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Subscription {status}. Please contact support."}).encode())
+                return
 
-            # 2. VALIDATION LOGIC
-            if status != "active":
-                print(f"BLOCKING: Client {client_key} status is {status}")
-                return self.send_error_msg(f"Account {status.capitalize()}. Please contact support.")
-            
-            if remaining <= 0:
-                print(f"BLOCKING: Client {client_key} has 0 credits")
-                return self.send_error_msg("Credit limit reached. Please refill.")
-                
         except Exception as e:
-            # If the sheet link is broken, we BLOCK to protect your wallet
-            print(f"GATEKEEPER ERROR: {str(e)}")
-            return self.send_error_msg("System verification failed.")
+            # If Google Sheet fails, block the request to be safe
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "System verification failed. Check Sheet Connection."}).encode())
+            return
 
-        # --- RUN AI (Only if Active and has Credits) ---
-        response = requests.post(
+        # --- RUN AI (Only happens if status was ACTIVE) ---
+        ai_resp = requests.post(
             "https://api.fashn.ai/v1/run",
             headers={"Authorization": f"Bearer {FASHN_API_KEY}", "Content-Type": "application/json"},
             json={"model_name": "tryon-v1.6", "inputs": data["inputs"]},
             timeout=60
         )
         
-        res_json = response.json()
-
-        # --- UPDATE SHEET COUNT (+1) ---
-        if "id" in res_json:
-            try:
-                requests.post(SHEET_API_URL, json={"key": client_key}, timeout=5)
-            except:
-                print("Failed to increment count in sheet, but AI started.")
+        # Update usage count in sheet
+        requests.post(SHEET_API_URL, json={"key": client_key})
 
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Content-type', 'application/json')
         self.end_headers()
-        self.wfile.write(json.dumps(res_json).encode())
+        self.wfile.write(json.dumps(ai_resp.json()).encode())
 
-    def send_error_msg(self, message):
-        self.send_response(403) # Forbidden
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({"error": message}).encode())
+    def do_GET(self):
+        # ... (Keep your existing do_GET for polling)
