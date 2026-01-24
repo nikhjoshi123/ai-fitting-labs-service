@@ -42,7 +42,7 @@ class handler(BaseHTTPRequestHandler):
 
         # --- THE GATEKEEPER CHECK ---
         try:
-            sheet_resp = requests.get(f"{SHEET_API_URL}?key={client_key}", timeout=5)
+           sheet_resp = requests.get(f"{SHEET_API_URL}?key={client_key}", timeout=10, allow_redirects=True)
             sheet_data = sheet_resp.json()
             
             if sheet_data.get("status") != "Active":
