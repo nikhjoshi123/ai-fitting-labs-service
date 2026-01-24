@@ -4,25 +4,34 @@ import requests
 import os
 from upstash_redis import Redis
 
-# Magic line to connect to your database automatically
-redis = Redis.from_env()
+# --- THE BRIDGE FIX ---
+# Vercel uses 'KV_...', but Upstash library wants 'UPSTASH_...'
+# We manually grab the Vercel ones and give them to the Chef.
+redis = Redis(
+    url=os.environ.get("KV_REST_API_URL"), 
+    token=os.environ.get("KV_REST_API_TOKEN")
+)
+
 FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 
 class handler(BaseHTTPRequestHandler):
-    def _set_headers(self, status_code=200):
-        self.send_response(status_code)
-        # --- THE CORS FIX: ALLOW EVERYONE ---
+    def _send_cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
+
+    def do_POST(self):
+        # We start with 200 and CORS so the browser doesn't panic
+        self.send_response(200)
+        self._send_cors_headers()
         self.send_header('Content-type', 'application/json')
         self.end_headers()
 
-    def do_OPTIONS(self):
-        # This handles the "Preflight" knock on the door
-        self._set_headers(200)
-
-    def do_POST(self):
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             data = json.loads(self.rfile.read(content_length))
@@ -34,9 +43,8 @@ class handler(BaseHTTPRequestHandler):
                 redis.set(client_key, "active")
                 status = "active"
 
-            if status != "active":
-                self._set_headers(200)
-                self.wfile.write(json.dumps({"error": f"Account {status}"}).encode())
+            if str(status).lower() != "active":
+                self.wfile.write(json.dumps({"error": f"Status: {status}"}).encode())
                 return
 
             # 2. Run AI
@@ -46,24 +54,7 @@ class handler(BaseHTTPRequestHandler):
                 json={"model_name": "tryon-v1.6", "inputs": data["inputs"]},
                 timeout=60
             )
-            
-            self._set_headers(200)
             self.wfile.write(json.dumps(ai_resp.json()).encode())
-            
+
         except Exception as e:
-            self._set_headers(500)
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
-
-    def do_GET(self):
-        # Handle status checking for polling
-        query = self.path.split('?')[-1]
-        params = dict(qc.split('=') for qc in query.split('&')) if '=' in query else {}
-        prediction_id = params.get('id')
-
-        if prediction_id:
-            ai_resp = requests.get(
-                f"https://api.fashn.ai/v1/status/{prediction_id}",
-                headers={"Authorization": f"Bearer {FASHN_API_KEY}"}
-            )
-            self._set_headers(200)
-            self.wfile.write(json.dumps(ai_resp.json()).encode())
+            self.wfile.write(json.dumps({"error": f"Server Error: {str(e)}"}).encode()
