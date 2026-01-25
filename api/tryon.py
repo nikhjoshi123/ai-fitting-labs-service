@@ -3,9 +3,8 @@ import json
 import requests
 import os
 
-# 1. SETUP - Ensure these are in your Vercel Environment Variables
 FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
-BASE_SHEETY = "https://api.sheety.co/c89502e433d17ba64f4cf1105578e56c/aiFittingLabsGatekeeper"
+BASE_SHEETY = "https://api.sheety.co/c89502e433d17ba64f4cf1105578e56c/aiFittingLabsGatekeeper/sheet1"
 
 class handler(BaseHTTPRequestHandler):
     def _set_headers(self, status=200):
@@ -21,24 +20,21 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._set_headers()
-        # --- THE GREY BUTTON CHECK ---
+        # Pre-check logic for the Silver Button
         if "check=" in self.path:
-            ckey = self.path.split("check=")[-1]
             try:
-                r = requests.get(f"{BASE_SHEETY}/sheet1", timeout=5).json()
-                rows = r.get("sheet1", [])
-                client = next((x for x in rows if str(x.get("clientKey")).strip() == ckey), None)
-                
-                # Turn button silver/grey if limit reached
-                if client and int(client.get("usage", 0)) >= int(client.get("limit", 0)):
+                r = requests.get(BASE_SHEETY, timeout=5).json()
+                # Get the first row (Usage/Limit)
+                data = r.get("sheet1", [])[0] 
+                if int(data.get("usage", 0)) >= int(data.get("limit", 0)):
                     self.wfile.write(json.dumps({"status": "PAUSED"}).encode())
                 else:
                     self.wfile.write(json.dumps({"status": "ACTIVE"}).encode())
-            except:
-                self.wfile.write(json.dumps({"status": "ACTIVE"}).encode())
+            except Exception as e:
+                self.wfile.write(json.dumps({"status": "ERROR", "msg": str(e)}).encode())
             return
 
-        # --- THE STATUS POLLING ---
+        # Polling
         pid = self.path.split('id=')[-1] if 'id=' in self.path else None
         if pid:
             res = requests.get(f"https://api.fashn.ai/v1/status/{pid}", 
@@ -49,48 +45,27 @@ class handler(BaseHTTPRequestHandler):
         try:
             blen = int(self.headers.get('Content-Length', 0))
             body = json.loads(self.rfile.read(blen))
-            ckey = body.get("client_key", "TEST_USER")
-
-            # 1. FETCH BOUTIQUE DATA
-            r = requests.get(f"{BASE_SHEETY}/sheet1", timeout=5).json()
-            rows = r.get("sheet1", [])
-            client = next((x for x in rows if str(x.get("clientKey")).strip() == ckey), None)
-
-            # 2. THE GATEKEEPER CHECK
-            if client and int(client.get("usage", 0)) >= int(client.get("limit", 0)):
-                self._set_headers(200)
-                self.wfile.write(json.dumps({"status": "PAUSED"}).encode())
-                return
-
-            # 3. CALL FASHN AI
-            api_url = "https://api.fashn.ai/v1/run"
-            headers = {"Authorization": f"Bearer {FASHN_API_KEY}", "Content-Type": "application/json"}
-            payload = {
-                "model_name": "tryon-v1.6",
-                "inputs": {
-                    "model_image": body["inputs"]["model_image"],
-                    "garment_image": body["inputs"]["garment_image"],
-                    "category": "auto"
-                }
-            }
             
-            ai_call = requests.post(api_url, headers=headers, json=payload, timeout=15)
-            ai_data = ai_call.json()
+            # 1. Start AI
+            ai_res = requests.post("https://api.fashn.ai/v1/run",
+                headers={"Authorization": f"Bearer {FASHN_API_KEY}"},
+                json={"model_name": "tryon-v1.6", "inputs": body["inputs"]})
+            ai_data = ai_res.json()
 
-            # 4. IF AI STARTS, UPDATE SHEET IMMEDIATELY
             if "id" in ai_data:
-                if client:
-                    # Increment the usage count
-                    new_usage = int(client.get("usage", 0)) + 1
-                    requests.put(f"{BASE_SHEETY}/sheet1/{client['id']}", 
-                                 json={"sheet1": {"usage": new_usage}})
+                # 2. Update Sheet Usage
+                try:
+                    r = requests.get(BASE_SHEETY).json()
+                    row_id = r.get("sheet1", [])[0]["id"]
+                    curr_usage = r.get("sheet1", [])[0]["usage"]
+                    requests.put(f"{BASE_SHEETY}/{row_id}", json={"sheet1": {"usage": curr_usage + 1}})
+                except: pass
                 
                 self._set_headers(200)
                 self.wfile.write(json.dumps(ai_data).encode())
             else:
-                self._set_headers(400)
-                self.wfile.write(json.dumps({"error": "AI_PROVIDER_ERROR", "details": ai_data}).encode())
-
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"error": "AI Busy"}).encode())
         except Exception as e:
             self._set_headers(500)
             self.wfile.write(json.dumps({"error": str(e)}).encode())
