@@ -19,15 +19,16 @@ class handler(BaseHTTPRequestHandler):
         self._set_headers()
         status = "ACTIVE"
         try:
+            # Check Redis for usage limit
             url = os.environ.get("UPSTASH_REDIS_REST_URL")
             tok = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
             if url and tok:
-                r = requests.get(f"{url}/get/global_usage", headers={"Authorization": f"Bearer {tok}"})
+                r = requests.get(f"{url}/get/global_usage", headers={"Authorization": f"Bearer {tok}"}, timeout=2)
                 val = r.json().get("result")
                 if val and int(val) >= 57:
                     status = "PAUSED"
         except:
-            pass
+            pass # Stay ACTIVE if Redis is slow
         self.wfile.write(json.dumps({"status": status}).encode())
 
     def do_POST(self):
@@ -37,13 +38,15 @@ class handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(content_length))
             fashn_key = os.environ.get("FASHN_API_KEY")
             
+            # Call Fashn AI
             res = requests.post(
                 "https://api.fashn.ai/v1/run",
                 headers={"Authorization": f"Bearer {fashn_key}"},
-                json={"model": "stable-viton-v1", "inputs": payload.get("inputs")}
+                json={"model": "stable-viton-v1", "inputs": payload.get("inputs")},
+                timeout=60
             )
             
-            # Increment Redis usage
+            # Log usage in Redis
             if res.status_code == 200:
                 url = os.environ.get("UPSTASH_REDIS_REST_URL")
                 tok = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
