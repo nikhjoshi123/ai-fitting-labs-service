@@ -17,38 +17,30 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._set_headers()
-        status = "ACTIVE"
-        try:
-            url = os.environ.get("UPSTASH_REDIS_REST_URL")
-            tok = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-            if url and tok:
-                r = requests.get(f"{url}/get/global_usage", headers={"Authorization": f"Bearer {tok}"}, timeout=2)
-                val = r.json().get("result")
-                if val and int(val) >= 57:
-                    status = "PAUSED"
-        except:
-            pass
-        self.wfile.write(json.dumps({"status": status}).encode())
+        self.wfile.write(json.dumps({"status": "ACTIVE"}).encode())
 
     def do_POST(self):
         self._set_headers()
         try:
             content_length = int(self.headers['Content-Length'])
             data = json.loads(self.rfile.read(content_length))
-            fashn_key = os.environ.get("FASHN_API_KEY")
             
+            # Check for API Key
+            fashn_key = os.environ.get("FASHN_API_KEY")
+            if not fashn_key:
+                return self.wfile.write(json.dumps({"error": "Missing FASHN_API_KEY in Vercel"}).encode())
+
+            # Attempt AI Call
             res = requests.post(
                 "https://api.fashn.ai/v1/run",
-                headers={"Authorization": f"Bearer {fashn_key}"},
+                headers={"Authorization": f: "Bearer {fashn_key}"},
                 json={"model": "stable-viton-v1", "inputs": data.get("inputs")},
-                timeout=60
+                timeout=25 # Set just below Vercel limit
             )
             
-            if res.status_code == 200:
-                url = os.environ.get("UPSTASH_REDIS_REST_URL")
-                tok = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-                requests.get(f"{url}/incr/global_usage", headers={"Authorization": f"Bearer {tok}"})
-
             self.wfile.write(json.dumps(res.json()).encode())
+            
+        except requests.exceptions.Timeout:
+            self.wfile.write(json.dumps({"error": "AI took too long (Vercel Timeout)"}).encode())
         except Exception as e:
             self.wfile.write(json.dumps({"error": str(e)}).encode())
