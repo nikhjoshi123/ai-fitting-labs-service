@@ -22,8 +22,7 @@ class handler(BaseHTTPRequestHandler):
             url = os.environ.get("UPSTASH_REDIS_REST_URL")
             tok = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
             if url and tok:
-                # Direct check to Redis
-                r = requests.get(f"{url}/get/global_usage", headers={"Authorization": f"Bearer {tok}"})
+                r = requests.get(f"{url}/get/global_usage", headers={"Authorization": f"Bearer {tok}"}, timeout=2)
                 val = r.json().get("result")
                 if val and int(val) >= 57:
                     status = "PAUSED"
@@ -35,28 +34,21 @@ class handler(BaseHTTPRequestHandler):
         self._set_headers()
         try:
             content_length = int(self.headers['Content-Length'])
-            body = self.rfile.read(content_length)
-            data = json.loads(body)
-            
+            data = json.loads(self.rfile.read(content_length))
             fashn_key = os.environ.get("FASHN_API_KEY")
             
-            # 1. Trigger the AI
             res = requests.post(
                 "https://api.fashn.ai/v1/run",
-                headers={"Authorization": f"Bearer {fashn_key}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {fashn_key}"},
                 json={"model": "stable-viton-v1", "inputs": data.get("inputs")},
-                timeout=30
+                timeout=60
             )
             
-            response_data = res.json()
-
-            # 2. Increment Redis only if AI started successfully
             if res.status_code == 200:
                 url = os.environ.get("UPSTASH_REDIS_REST_URL")
                 tok = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
                 requests.get(f"{url}/incr/global_usage", headers={"Authorization": f"Bearer {tok}"})
 
-            self.wfile.write(json.dumps(response_data).encode())
+            self.wfile.write(json.dumps(res.json()).encode())
         except Exception as e:
-            # This sends the actual error to your alert box so we can see WHAT is busy
-            self.wfile.write(json.dumps({"error": str
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
