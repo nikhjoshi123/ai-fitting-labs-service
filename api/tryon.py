@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler
 
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
+        # This part is CRITICAL. It tells the browser the request is allowed.
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -12,14 +13,15 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        # Universal CORS headers for GET
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
-        # This stops the 404/CORS errors in your console
         self.wfile.write(json.dumps({"status": "ACTIVE"}).encode())
 
     def do_POST(self):
+        # Universal CORS headers for POST
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -27,11 +29,14 @@ class handler(BaseHTTPRequestHandler):
         
         try:
             content_length = int(self.headers['Content-Length'])
-            data = json.loads(self.rfile.read(content_length))
+            raw_data = self.rfile.read(content_length)
+            data = json.loads(raw_data)
             
             fashn_key = os.environ.get("FASHN_API_KEY")
             
-            # Simple direct call to Fashn AI
+            # This logs the attempt so you can see it in Vercel Logs
+            print(f"Attempting AI Run for: {data.get('client_key')}")
+
             res = requests.post(
                 "https://api.fashn.ai/v1/run",
                 headers={"Authorization": f"Bearer {fashn_key}"},
@@ -41,6 +46,13 @@ class handler(BaseHTTPRequestHandler):
                 },
                 timeout=30
             )
+            
+            # Print the Fashn response to your logs for debugging
+            print(f"Fashn Response: {res.status_code}")
+            
             self.wfile.write(json.dumps(res.json()).encode())
+            
         except Exception as e:
+            # This ensures even a crash is logged
+            print(f"CRITICAL ERROR: {str(e)}")
             self.wfile.write(json.dumps({"error": str(e)}).encode())
