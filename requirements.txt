@@ -2,4 +2,4 @@ replicate
 flask
 flask-cors
 upstash-redis
-
+requests
