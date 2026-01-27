@@ -1,5 +1,15 @@
 {
-  "rewrites": [
-    { "source": "/api/tryon", "destination": "/api/tryon.py" }
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/tryon.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/tryon",
+      "dest": "api/tryon.py"
+    }
   ]
 }
