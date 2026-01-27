@@ -1,85 +1,74 @@
-from http.server import BaseHTTPRequestHandler
-import json
-import requests
 import os
+import replicate
+from flask import Flask, request, jsonify
+from upstash_redis import Redis
+from flask_cors import CORS
 
-# CONFIG
-FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
-# Using the direct Sheet1 URL for faster connection
-BASE_SHEETY = "https://api.sheety.co/c89502e433d17ba64f4cf1105578e56c/aiFittingLabsGatekeeper/sheet1"
+app = Flask(_name_)
+CORS(app) # Allows your button to talk to this API
 
-class handler(BaseHTTPRequestHandler):
-    def _set_headers(self, status=200):
-        self.send_response(status)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
+# 1. Connect to Upstash
+redis = Redis(
+    url="https://superb-rhino-25696.upstash.io", 
+    token="AmRgAAIgcDL9pAExdb2CBzoIagkyyoXIrcZRRctlgid2u3MyntvM3g"
+)
 
-    def do_OPTIONS(self):
-        self._set_headers()
+# 2. Set Replicate Token (Make sure this is in your Vercel Env Variables too)
+os.environ["REPLICATE_API_TOKEN"] = "your_replicate_token_here"
 
-    def do_GET(self):
-        self._set_headers()
-        # 1. THE GREY BUTTON CHECK
-        if "check=" in self.path:
-            try:
-                r = requests.get(BASE_SHEETY, timeout=5).json()
-                rows = r.get("sheet1", [])
-                if rows:
-                    data = rows[0] # Checks the very first boutique in your sheet
-                    usage = int(data.get("usage", 0))
-                    limit = int(data.get("limit", 0))
-                    if usage >= limit:
-                        self.wfile.write(json.dumps({"status": "PAUSED"}).encode())
-                        return
-                self.wfile.write(json.dumps({"status": "ACTIVE"}).encode())
-            except Exception as e:
-                self.wfile.write(json.dumps({"status": "ERROR", "details": str(e)}).encode())
-            return
+@app.route('/api/tryon', methods=['GET', 'POST'])
+def tryon():
+    # Detect Visitor IP
+    visitor_ip = request.headers.get('x-forwarded-for', request.remote_addr)
+    if visitor_ip and ',' in visitor_ip: 
+        visitor_ip = visitor_ip.split(',')[0].strip()
 
-        # 2. STATUS POLLING
-        pid = self.path.split('id=')[-1] if 'id=' in self.path else None
-        if pid:
-            res = requests.get(f"https://api.fashn.ai/v1/status/{pid}", 
-                               headers={"Authorization": f"Bearer {FASHN_API_KEY}"})
-            self.wfile.write(json.dumps(res.json()).encode())
+    # --- ACTION: CHECK STATUS ---
+    if request.method == 'GET':
+        # Check Premium Status
+        if redis.get(f"premium:{visitor_ip}"):
+            return jsonify({"status": "ACTIVE", "is_premium": True})
 
-    def do_POST(self):
+        # Check Global Limit (70)
+        global_usage = int(redis.get("global_usage") or 0)
+        if global_usage >= 70:
+            return jsonify({"status": "PAUSED", "reason": "Global Limit Reached"})
+
+        # Check Visitor Limit (5)
+        visitor_usage = int(redis.get(f"usage:{visitor_ip}") or 0)
+        if visitor_usage >= 5:
+            return jsonify({"status": "PAUSED", "reason": "Visitor Limit Reached"})
+
+        return jsonify({"status": "ACTIVE", "remaining": 5 - visitor_usage})
+
+    # --- ACTION: RUN AI TRY-ON ---
+    if request.method == 'POST':
+        data = request.json
+        model_image = data.get("inputs", {}).get("model_image")
+        garment_image = data.get("inputs", {}).get("garment_image")
+
+        # 1. Increment usage in Redis
+        redis.incr("global_usage")
+        redis.incr(f"usage:{visitor_ip}")
+        redis.expire(f"usage:{visitor_ip}", 86400) # Reset after 24 hours
+
+        # 2. Run Replicate AI
         try:
-            blen = int(self.headers.get('Content-Length', 0))
-            body = json.loads(self.rfile.read(blen))
-            
-            # RUN AI
-            ai_call = requests.post("https://api.fashn.ai/v1/run",
-                headers={"Authorization": f"Bearer {FASHN_API_KEY}"},
-                json={
-                    "model_name": "tryon-v1.6",
-                    "inputs": {
-                        "model_image": body["inputs"]["model_image"],
-                        "garment_image": body["inputs"]["garment_image"],
-                        "category": "auto"
-                    }
-                })
-            ai_data = ai_call.json()
-
-            if "id" in ai_data:
-                # UPDATE SHEETY IMMEDIATELY
-                try:
-                    r = requests.get(BASE_SHEETY).json()
-                    first_row = r.get("sheet1", [])[0]
-                    row_id = first_row["id"]
-                    curr_usage = int(first_row.get("usage", 0))
-                    requests.put(f"{BASE_SHEETY}/{row_id}", 
-                                 json={"sheet1": {"usage": curr_usage + 1}})
-                except: pass # Don't block the user if Sheety is slow
-                
-                self._set_headers(200)
-                self.wfile.write(json.dumps(ai_data).encode())
-            else:
-                self._set_headers(200)
-                self.wfile.write(json.dumps({"error": "AI_BUSY", "details": ai_data}).encode())
+            output = replicate.run(
+                "cuuupid/idm-vton:c871d0b9e830101a9625aed51ee3650bd314931fb931bd98402127275d3f4435",
+                input={
+                    "crop": False,
+                    "seed": 42,
+                    "steps": 30,
+                    "category": "upper_body",
+                    "garm_img": garment_image,
+                    "human_img": model_image,
+                    "garment_des": "a chic garment"
+                }
+            )
+            # Replicate returns a list of URLs
+            return jsonify({"status": "completed", "output": output})
         except Exception as e:
-            self._set_headers(500)
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return jsonify({"status": "failed", "error": str(e)})
+
+    return jsonify({"error": "Invalid Method"})
