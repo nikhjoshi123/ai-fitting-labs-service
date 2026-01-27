@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api/tryon", "destination": "/api/tryon.py" }
+  ]
+}
