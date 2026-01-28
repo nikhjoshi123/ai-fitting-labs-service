@@ -4,61 +4,63 @@ import os
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-# Hiding the key in Vercel Environment Variables is your security
-FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
+# Your Secret Key stays safe on Vercel
+API_KEY = os.environ.get("FASHN_API_KEY")
 
 class handler(BaseHTTPRequestHandler):
-    def _headers(self):
-        self.send_response(200)
+    def _send_json(self, data, status=200):
+        self.send_response(status)
         self.send_header('Content-type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
 
     def do_OPTIONS(self):
-        self._headers()
+        self._send_json({"status": "ok"})
 
     def do_GET(self):
-        self._headers()
         query = parse_qs(urlparse(self.path).query)
         pid = query.get('id', [None])[0]
+        check_balance = query.get('balance', [None])[0]
 
-        if not pid:
-            self.wfile.write(json.dumps({"status": "ready"}).encode())
+        # NEW: Check balance directly from your website!
+        if check_balance:
+            res = requests.get("https://api.fashn.ai/v1/credits", headers={"Authorization": f"Bearer {API_KEY}"})
+            self._send_json(res.json())
             return
 
-        # Direct check to Fashn AI - No Redis middleman
-        headers = {"Authorization": f"Bearer {FASHN_API_KEY}"}
+        if not pid:
+            self._send_json({"status": "ready", "msg": "Send a POST with images or ?id= to check status"})
+            return
+
+        # Poll Fashn AI directly
         try:
-            res = requests.get(f"https://api.fashn.ai/v1/predictions/{pid}", headers=headers, timeout=10)
-            self.wfile.write(res.content)
+            res = requests.get(f"https://api.fashn.ai/v1/predictions/{pid}", 
+                               headers={"Authorization": f"Bearer {API_KEY}"}, timeout=10)
+            self._send_json(res.json())
         except Exception as e:
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            self._send_json({"error": str(e)}, 500)
 
     def do_POST(self):
         try:
             content_length = int(self.headers['Content-Length'])
             data = json.loads(self.rfile.read(content_length))
             
-            inputs = data.get("inputs", {})
+            # Forward the request to Fashn AI
             payload = {
-                "model_image": inputs.get("model_image"),
-                "garment_image": inputs.get("garment_image"),
+                "model_image": data["inputs"]["model_image"],
+                "garment_image": data["inputs"]["garment_image"],
                 "category": "tops"
             }
-
-            headers = {
-                "Authorization": f"Bearer {FASHN_API_KEY}",
-                "Content-Type": "application/json"
-            }
-
-            # Fire request to Fashn AI
-            response = requests.post("https://api.fashn.ai/v1/predictions", headers=headers, json=payload, timeout=25)
             
-            self._headers()
-            self.wfile.write(response.content)
+            res = requests.post("https://api.fashn.ai/v1/predictions", 
+                                 json=payload, 
+                                 headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                                 timeout=30)
+            
+            self._send_json(res.json(), res.status_code)
             
         except Exception as e:
-            self._headers()
-            self.wfile.write(json.dumps({"error": "Gateway Error", "details": str(e)}).encode())
+            self._send_json({"error": "Processing failed", "details": str(e)}, 500)
