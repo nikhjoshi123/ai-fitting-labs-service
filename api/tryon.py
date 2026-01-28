@@ -12,15 +12,25 @@ FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 redis = Redis(url=UPSTASH_URL, token=UPSTASH_TOKEN)
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        from urllib.parse import urlparse, parse_qs
-        query = parse_qs(urlparse(self.path).query)
-        job_id = query.get('id', [None])[0]
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.end_headers()
+
+    def do_POST(self):
+        # Add CORS here too
+        content_length = int(self.headers['Content-Length'])
+        post_data = json.loads(self.rfile.read(content_length))
+        
+        # ... your existing Fashn/Upstash logic ...
 
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', '*') # IMPORTANT
         self.end_headers()
+        # ... write your JSON ...
 
         if job_id:
             status_data = redis.get(f"job_{job_id}")
