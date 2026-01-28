@@ -1,11 +1,16 @@
 {
+  "version": 2,
   "trailingSlash": false,
   "functions": {
     "api/tryon.py": {
+      "runtime": "python@3.9",
       "maxDuration": 300
     }
   },
   "rewrites": [
-    { "source": "/api/tryon", "destination": "/api/tryon.py" }
+    {
+      "source": "/api/tryon",
+      "destination": "/api/tryon.py"
+    }
   ]
 }
