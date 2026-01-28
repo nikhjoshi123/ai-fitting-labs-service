@@ -1,13 +1,12 @@
 {
+  "trailingSlash": false,
   "functions": {
     "api/tryon.py": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "memory": 1024
     }
   },
   "rewrites": [
-    { 
-      "source": "/api/tryon", 
-      "destination": "/api/tryon.py"
-    }
+    { "source": "/api/tryon", "destination": "/api/tryon.py" }
   ]
 }
