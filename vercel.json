@@ -2,8 +2,7 @@
   "trailingSlash": false,
   "functions": {
     "api/tryon.py": {
-      "maxDuration": 300,
-      "memory": 1024
+      "maxDuration": 300
     }
   },
   "rewrites": [
