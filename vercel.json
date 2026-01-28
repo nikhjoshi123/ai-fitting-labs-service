@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "trailingSlash": false,
   "rewrites": [
     {
       "source": "/api/tryon",
