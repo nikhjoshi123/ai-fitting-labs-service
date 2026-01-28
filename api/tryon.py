@@ -4,6 +4,7 @@ import os
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
+# ONLY Fashn API key is needed now
 FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 
 class handler(BaseHTTPRequestHandler):
@@ -27,10 +28,10 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "online"}).encode())
             return
 
+        # Talk DIRECTLY to Fashn AI to check status
         headers = {"Authorization": f"Bearer {FASHN_API_KEY}"}
         try:
-            # Check the status of the AI generation
-            res = requests.get(f"https://api.fashn.ai/v1/predictions/{pid}", headers=headers, timeout=10)
+            res = requests.get(f"https://api.fashn.ai/v1/predictions/{pid}", headers=headers, timeout=15)
             self.wfile.write(res.content)
         except Exception as e:
             self.wfile.write(json.dumps({"error": str(e)}).encode())
@@ -38,8 +39,8 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data)
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
             
             inputs = data.get("inputs", {})
             payload = {
@@ -53,13 +54,12 @@ class handler(BaseHTTPRequestHandler):
                 "Content-Type": "application/json"
             }
 
-            # We use a short timeout so the connection doesn't hang
-            response = requests.post("https://api.fashn.ai/v1/predictions", headers=headers, json=payload, timeout=25)
+            # Send to Fashn AI
+            response = requests.post("https://api.fashn.ai/v1/predictions", headers=headers, json=payload, timeout=30)
             
             self._set_headers(200)
             self.wfile.write(response.content)
             
         except Exception as e:
-            # If it times out or resets, we still send a JSON response
             self._set_headers(500)
-            self.wfile.write(json.dumps({"error": "Reset or Timeout", "details": str(e)}).encode())
+            self.wfile.write(json.dumps({"error": "Fashn AI Error", "details": str(e)}).encode()
