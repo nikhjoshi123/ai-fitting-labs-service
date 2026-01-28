@@ -1,2 +1,2 @@
-requests
-upstash-redis
+requests==2.31.0
+upstash-redis==0.15.0
