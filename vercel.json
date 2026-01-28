@@ -1,9 +1,6 @@
 {
   "version": 2,
   "rewrites": [
-    {
-      "source": "/api/tryon",
-      "destination": "/api/tryon.py"
-    }
+    { "source": "/api/tryon", "destination": "/api/tryon.py" }
   ]
 }
