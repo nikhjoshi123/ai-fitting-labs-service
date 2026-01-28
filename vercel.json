@@ -1,10 +1,13 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/tryon.py", "use": "@vercel/python" },
-    { "src": "package.json", "use": "@vercel/static-build" }
-  ],
   "rewrites": [
-    { "source": "/api/tryon", "destination": "api/tryon.py" }
+    {
+      "source": "/api/tryon",
+      "destination": "/api/tryon.py"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
