@@ -1,15 +1,7 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/tryon.py",
-      "use": "@vercel/python"
+  "functions": {
+    "api/tryon.js": {
+      "maxDuration": 300
     }
-  ],
-  "routes": [
-    {
-      "src": "/api/tryon",
-      "dest": "api/tryon.py"
-    }
-  ]
+  }
 }
